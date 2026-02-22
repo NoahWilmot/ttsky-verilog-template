@@ -19,14 +19,14 @@ module tt_um_example (
   logic reset;
   assign reset = ~rst_n;
     
-  RangeFinder #(8) RF(.data_in(), .clock(clk),. reset(reset), .go(), .finish(), .range(), .error());
+  RangeFinder #(8) RF(.data_in(ui_in), .clock(clk),. reset(reset), .go(uio_in[0]), .finish(uio_in[1]), .range(uo_out), .error(uio_out[0]));
 
   // All output pins must be assigned. If not used, assign to 0.
-  assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
-  assign uio_out = 0;
+  //assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
+  assign uio_out[1:7] = uio_in[1:7];
   assign uio_oe  = 0;
 
   // List all unused inputs to prevent warnings
-  wire _unused = &{ena, clk, rst_n, 1'b0};
+  wire _unused = &{ena, 1'b0};
 
 endmodule
