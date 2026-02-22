@@ -38,6 +38,7 @@ module fsm
 
  always_comb begin
    init = 1'b0;
+   error = 1'b0;
    case(cur_state)
    IDLE: begin
       n_state = IDLE;
@@ -100,5 +101,6 @@ module Register
     else if(cl)
         Q <= 0;
   end
+
 
 endmodule: Register
