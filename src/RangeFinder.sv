@@ -17,15 +17,18 @@ fsm control(.*);
 assign min_en = init | new_min;
 assign max_en = init | new_max;
 
-MagComp #(WIDTH) min_comp(data_in, min_reg_out,,,new_min);
-MagComp #(WIDTH) max_comp(data_in, max_reg_out,new_max,,);
+logic mg1,mg2,mg3,mg4;
 
-Register #(WIDTH) min_reg(data_in, min_en, , clock, min_reg_out);
-Register #(WIDTH) max_reg(data_in, max_en, , clock, max_reg_out);
+MagComp #(WIDTH) min_comp(data_in, min_reg_out,mg1,mg2,new_min);
+MagComp #(WIDTH) max_comp(data_in, max_reg_out,new_max,mg3,mg4);
+
+logic clr;
+assign clr = 1'b0;
+
+Register #(WIDTH) min_reg(data_in, min_en, clr , clock, min_reg_out);
+Register #(WIDTH) max_reg(data_in, max_en, clr , clock, max_reg_out);
 
 assign range = max_reg_out - min_reg_out;
-
-
 
 endmodule: RangeFinder
 
@@ -104,3 +107,4 @@ module Register
 
 
 endmodule: Register
+
