@@ -16,6 +16,11 @@ module tt_um_example (
     input  wire       rst_n     // reset_n - low to reset
 );
 
+  logic reset;
+  assign reset = ~rst_n;
+    
+  RangeFinder #(8) RF(.data_in(), .clock(clk),. reset(reset), .go(), .finish(), .range(), .error());
+
   // All output pins must be assigned. If not used, assign to 0.
   assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
   assign uio_out = 0;
