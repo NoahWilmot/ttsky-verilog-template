@@ -15,6 +15,16 @@ module TileGrowth(
     logic [15:0] gridl [15:0]; // low bit  
     logic [15:0] gridh [15:0]; // high bit 
 
+    logic [255:0] gridl_p, gridh_p;
+
+    genvar j;
+    generate
+        for(j = 0; j < 16; j++) begin
+            assign gridl_p[j*16 +: 16] = gridl[j];
+            assign gridh_p[j*16 +: 16] = gridh[j];
+        end
+    endgenerate
+
     //Pre-game grid write
     logic pg_wr_en;
     logic [3:0] pg_wr_row, pg_wr_col;
@@ -92,7 +102,7 @@ module TileGrowth(
     InGameFSM ig (
         .clock, .reset_n,
         .game_start,
-        .gridl, .gridh,
+        .gridl_p, .gridh_p,
         .lfsr_val,
         .wr_en(ig_wr_en),
         .wr_row(ig_wr_row),
@@ -254,8 +264,8 @@ endmodule : PreStartFSM
 module InGameFSM(
     input logic clock, reset_n,
     input logic game_start,
-    input logic [15:0] gridl [15:0],
-    input logic [15:0] gridh [15:0],
+    input logic [255:0] gridl_p,
+    input logic [255:0] gridh_p,
     input logic [15:0] lfsr_val,
     output logic wr_en,
     output logic [3:0] wr_row, wr_col,
@@ -264,6 +274,19 @@ module InGameFSM(
     output logic done,
     output logic [7:0] count
 );
+
+    //unpack the grid
+    logic [15:0] gridl [15:0];
+    logic [15:0] gridh [15:0];
+
+    genvar i;
+
+    generate 
+        for(i = 0; i < 16; i++) begin
+            assign gridl[i] = gridl_p[i*16 +: 16];
+            assign gridh[i] = gridh_p[i*16 +: 16];
+        end
+    endgenerate
 
     enum logic [1:0] {FROZEN, STALL, SPREAD, DONE} cur_state, next_state;
 
