@@ -40,8 +40,8 @@ module TileGrowth(
     logic frozen, game_done;
 
     //Cursor
-    logic [3:0] cursor_row, cursor_col;
-    logic [1:0] selected_color;
+    //logic [3:0] cursor_row, cursor_col;
+    //logic [1:0] selected_color;
 
     //LFSR
     logic [15:0] lfsr_val;
@@ -84,12 +84,15 @@ module TileGrowth(
         end
     end
 
+    //silence error
+    assign data = game_done;
+
     PreStartFSM pg (
         .clock, .reset_n,
         .up, .down, .left, .right,
         .color_sel, .place, .start,
-        .cursor_row, .cursor_col,
-        .selected_color,
+        //.cursor_row, .cursor_col,
+        //.selected_color,
         .game_start,
         .wr_en(pg_wr_en),
         .wr_row (pg_wr_row),
@@ -108,7 +111,7 @@ module TileGrowth(
         .wr_row(ig_wr_row),
         .wr_col(ig_wr_col),
         .wr_data(ig_wr_data),
-        .frozen,
+        //.frozen,
         .done(game_done),
         .count
     );
@@ -127,8 +130,8 @@ module PreStartFSM(
     input logic clock, reset_n,
     input logic up, down, left, right,
     input logic color_sel, place, start,
-    output logic [3:0] cursor_row, cursor_col,
-    output logic [1:0] selected_color,
+    //output logic [3:0] cursor_row, cursor_col,
+    //output logic [1:0] selected_color,
     output logic game_start,
     output logic wr_en,
     output logic [3:0] wr_row, wr_col,
@@ -136,6 +139,9 @@ module PreStartFSM(
     output logic lfsr_seed_en,
     output logic [15:0] lfsr_seed
 );
+
+    logic [3:0] cursor_row, cursor_col;
+    logic [1:0] selected_color;
 
     enum logic [2:0] {IDLE, MOVEUP, MOVEDOWN, MOVELEFT, 
                       MOVERIGHT, PLACE, START} cur_state, next_state;
@@ -270,7 +276,7 @@ module InGameFSM(
     output logic wr_en,
     output logic [3:0] wr_row, wr_col,
     output logic [1:0] wr_data,
-    output logic frozen,
+    //output logic frozen,
     output logic done,
     output logic [7:0] count
 );
@@ -318,13 +324,13 @@ module InGameFSM(
 
     // Next-state logic
     always_comb begin
-        frozen = 1'b0;
+        //frozen = 1'b0;
         done   = 1'b0;
         case(cur_state)
             FROZEN: begin
                 if(game_start) next_state = STALL;
                 else next_state = FROZEN;
-                frozen = 1'b1;
+                //frozen = 1'b1;
             end
             STALL: begin
                 if(stall_counter == STALL_MAX) next_state = SPREAD;
@@ -339,7 +345,7 @@ module InGameFSM(
             end
             DONE: begin
                 next_state = DONE;
-                frozen = 1'b1;
+                //frozen = 1'b1;
                 done   = 1'b1;
             end
         endcase
