@@ -45,7 +45,8 @@ module TileGrowth(
     //logic [1:0] selected_color;
 
     //LFSR
-    logic [15:0] lfsr_val;
+    //logic [15:0] lfsr_val;
+    logic lv2, lv3, lv5, lv8, lv12, lv15;
     logic lfsr_seed_en;
     logic [15:0] lfsr_seed;
 
@@ -108,8 +109,8 @@ module TileGrowth(
         .game_start,
         .gridl_p, .gridh_p,
         //.lfsr_val,
-        .lv2(lfsr_val[2]), .lv3(lfsr_val[3]), .lv5(lfsr_val[5]),
-        .lv8(lfsr_val[8]), .lv12(lfsr_val[12]), .lv15(lfsr_val[15]),
+        .lv2, .lv3, .lv5,
+        .lv8, .lv12, .lv15,
         .wr_en(ig_wr_en),
         .wr_row(ig_wr_row),
         .wr_col(ig_wr_col),
@@ -123,7 +124,9 @@ module TileGrowth(
         .clock, .reset_n,
         .seed_en(lfsr_seed_en),
         .seed(lfsr_seed),
-        .val(lfsr_val)
+        //.val(lfsr_val)
+        .lv2, .lv3, .lv5,
+        .lv8, .lv12, .lv15
     );
 
 endmodule : TileGrowth
@@ -478,10 +481,21 @@ module LFSR16(
     input logic clock, reset_n,
     input logic seed_en,
     input logic [15:0] seed,
-    output logic [15:0] val
+    //output logic [15:0] val
+    output logic lv2, lv3, lv5, lv8, lv12, lv15
 );
+    
+    logic [15:0] val;
     logic in;
+    
     assign in = val[15] ^ val[13] ^ val[12] ^ val[10];
+
+    assign lv2 = val[2];
+    assign lv3 = val[3];
+    assign lv5 = val[5];
+    assign lv8 = val[8];
+    assign lv12 = val[12];
+    assign lv15 = val[15];
 
     always_ff @(posedge clock, negedge reset_n) begin
         if(~reset_n) begin
