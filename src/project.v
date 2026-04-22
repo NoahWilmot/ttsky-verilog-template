@@ -16,7 +16,7 @@ module tt_um_example (
     input  wire       rst_n     // reset_n - low to reset
 );
 
-  TG TileGrowth(.clock(clk), .reset_n(rst_n), .up(ui_in[0]), .down(ui_in[1]), .left(ui_in[2]), .right(ui_in[3]), .color_sel(ui_in[4]), .place(ui_in[5]), .start(ui_in[6]), .data(uo_out[0]), .count(uio_out);
+  TG TileGrowth(.clock(clk), .reset_n(rst_n), .up(ui_in[0]), .down(ui_in[1]), .left(ui_in[2]), .right(ui_in[3]), .color_sel(ui_in[4]), .place(ui_in[5]), .start(ui_in[6]), .data(uo_out[0]), .count(uio_out));
   //RangeFinder #(8) RF(.data_in(ui_in), .clock(clk),. reset(reset), .go(uio_in[0]), .finish(uio_in[1]), .range(uo_out), .error(uio_out[2]));
 
   // All output pins must be assigned. If not used, assign to 0.
