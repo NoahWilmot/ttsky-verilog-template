@@ -226,11 +226,11 @@ module PreStartFSM(
             selected_color <= 2'd1;
             game_start <= 1'b0;
             wr_en <= 1'b0;
-            wr_row <= 1'b0;
-            wr_col <= 1'b0;
-            wr_data <= 1'b0;
+            wr_row <= 4'h0;
+            wr_col <= 4'h0;
+            wr_data <= 2'd0;
             lfsr_seed_en <= 1'b0;
-            lfsr_seed <= 1'b0;
+            lfsr_seed <= 16'h0000;
         end
         else begin
             wr_en <= 1'b0;
@@ -245,7 +245,7 @@ module PreStartFSM(
                     wr_row <= cursor_row;
                     wr_col <= cursor_col;
                     wr_data <= selected_color;
-                    lfsr_seed <= lfsr_seed ^ counter;
+                    lfsr_seed <= lfsr_seed ^ counter[15:0];
                     lfsr_seed_en <= 1'b1;
                 end
                 START: game_start <= 1'b1;
