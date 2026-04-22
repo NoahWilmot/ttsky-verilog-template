@@ -11,16 +11,17 @@ You can also include images in this folder and reference them in the markdown. E
 
 Explain how your project works
 
-Finds the range of a series of inputs
+Simulates tile growth on a 16x16 LED Matrix
 
 ## How to test
 
 Explain how to use your project
 
-Serially input the numbers in your set
+Use the python testbench in the home repository or observe the output on the LED matrix
 
 ## External hardware
 
 List external hardware used in your project (e.g. PMOD, LED display, etc), if any
 
-No external hardware needed
+16x16 LED Matrix
+7 Seg display counter
