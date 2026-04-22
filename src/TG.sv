@@ -37,7 +37,8 @@ module TileGrowth(
 
     //Game Stage
     logic game_start;
-    logic frozen, game_done;
+    //logic frozen, game_done;
+    logic game_done;
 
     //Cursor
     //logic [3:0] cursor_row, cursor_col;
@@ -106,7 +107,9 @@ module TileGrowth(
         .clock, .reset_n,
         .game_start,
         .gridl_p, .gridh_p,
-        .lfsr_val,
+        //.lfsr_val,
+        .lv2(lfsr_val[2]), .lv3(lfsr_val[3]), .lv5(lfsr_val[5]),
+        .lv8(lfsr_val[8]), .lv12(lfsr_val[12]), .lv15(lfsr_val[15]),
         .wr_en(ig_wr_en),
         .wr_row(ig_wr_row),
         .wr_col(ig_wr_col),
@@ -260,6 +263,7 @@ module PreStartFSM(
                         selected_color <= (selected_color == 2'd1) ? 2'd2 : 2'd1;
                     end
                 end
+                default: ;
             endcase
         end
     end
@@ -272,7 +276,8 @@ module InGameFSM(
     input logic game_start,
     input logic [255:0] gridl_p,
     input logic [255:0] gridh_p,
-    input logic [15:0] lfsr_val,
+    //input logic [15:0] lfsr_val,
+    input logic lv2, lv3, lv5, lv8, lv12, lv15,
     output logic wr_en,
     output logic [3:0] wr_row, wr_col,
     output logic [1:0] wr_data,
@@ -309,8 +314,10 @@ module InGameFSM(
     logic [3:0] spread;
     logic [1:0] dir;
 
-    assign spread = {lfsr_val[12], lfsr_val[2], lfsr_val[5], lfsr_val[15]};
-    assign dir    = {lfsr_val[8],  lfsr_val[3]};
+    //assign spread = {lfsr_val[12], lfsr_val[2], lfsr_val[5], lfsr_val[15]};
+    //assign dir    = {lfsr_val[8],  lfsr_val[3]};
+    assign spread = {lv12, lv2, lv5, lv15};
+    assign dir = {lv8, lv3};
 
     // Check whether every cell is non-zero
     always_comb begin
