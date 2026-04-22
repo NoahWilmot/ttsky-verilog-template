@@ -16,19 +16,15 @@ module tt_um_example (
     input  wire       rst_n     // reset_n - low to reset
 );
 
-  logic reset;
-  assign reset = ~rst_n;
-    
-  RangeFinder #(8) RF(.data_in(ui_in), .clock(clk),. reset(reset), .go(uio_in[0]), .finish(uio_in[1]), .range(uo_out), .error(uio_out[2]));
+  TG TileGrowth(.clock(clk), .reset_n(rst_n), .up(ui_in[0]), .down(ui_in[1]), .left(ui_in[2]), .right(ui_in[3]), .color_sel(ui_in[4]), .place(ui_in[5]), .start(ui_in[6]), .data(uo_out[0]), .count(uio_out);
+  //RangeFinder #(8) RF(.data_in(ui_in), .clock(clk),. reset(reset), .go(uio_in[0]), .finish(uio_in[1]), .range(uo_out), .error(uio_out[2]));
 
   // All output pins must be assigned. If not used, assign to 0.
   //assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
-  assign uio_oe  = 8'b0010_0000;
-
-  assign uio_out[1:0] = 2'b00;
-  assign uio_out[7:3] = 5'b00000;
+  assign uio_oe  = 8'b0000_0000;
+  assign uo_out[7:1] = 7'b000_0000;
 
   // List all unused inputs to prevent warnings
-  wire _unused = &{ena, uio_in[2], uio_in[3], uio_in[4], uio_in[5], uio_in[6], uio_in[7], 1'b0};
+  wire _unused = &{ena, uio_in,  ui_in[7], 1'b0};
 
 endmodule
