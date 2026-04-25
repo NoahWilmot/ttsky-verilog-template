@@ -86,9 +86,6 @@ module TileGrowth(
         end
     end
 
-    //silence error
-    assign data = game_done;
-
     PreStartFSM pg (
         .clock, .reset_n,
         .up, .down, .left, .right,
@@ -127,6 +124,12 @@ module TileGrowth(
         //.val(lfsr_val)
         .lv2, .lv3, .lv5,
         .lv8, .lv12, .lv15
+    );
+
+    WS2812B_Driver ws2812b (
+        .clock, .reset_n,
+        .gridl_p, .gridh_p,
+        .ws_data(data)
     );
 
 endmodule : TileGrowth
@@ -492,7 +495,7 @@ module LFSR16(
 
     assign lv2 = val[2];
     assign lv3 = val[3];
-    assign lv5 = val[5];
+    assign lv5 = val[5]; 
     assign lv8 = val[8];
     assign lv12 = val[12];
     assign lv15 = val[15];
@@ -510,3 +513,141 @@ module LFSR16(
     end
 
 endmodule : LFSR16
+ 
+module WS2812B_Driver #(
+    parameter CLK_MHZ   = 50,
+ 
+    parameter T0H_CYCLES = 20,   // ~400 ns @ 50 MHz
+    parameter T0L_CYCLES = 42,   // ~850 ns @ 50 MHz
+    parameter T1H_CYCLES = 40,   // ~800 ns @ 50 MHz
+    parameter T1L_CYCLES = 22,   // ~450 ns @ 50 MHz
+    parameter RES_CYCLES = 2500, // >50 µs  @ 50 MHz
+ 
+    parameter [23:0] COLOR_0 = 24'h00_00_00,   // 2'b00 -> off
+    parameter [23:0] COLOR_1 = 24'h00_00_FF,   // 2'b01 -> blue, GRB: G=00 R=00 B=FF
+    parameter [23:0] COLOR_2 = 24'h00_FF_00,   // 2'b10 -> red, GRB: G=00 R=FF B=00
+    parameter [23:0] COLOR_3 = 24'hFF_FF_FF    // 2'b11 -> white, GRB: G=FF R=FF B=FF
+)(
+    input  logic        clock,
+    input  logic        reset_n,
+    input  logic [255:0] gridl_p,  
+    input  logic [255:0] gridh_p,   
+    output logic        ws_data
+);
+ 
+    logic [1:0] color [0:255];
+ 
+    //Reconstruct the grid
+
+    genvar i;
+    generate
+        for (i = 0; i < 256; i++) begin : 
+            assign color[i] = {gridh_p[i], gridl_p[i]};
+        end
+    endgenerate
+ 
+    //Color lookup
+
+    function automatic [23:0] grb_of_color;
+        input [1:0] c;
+        case (c)
+            2'b00:   grb_of_color = COLOR_0;
+            2'b01:   grb_of_color = COLOR_1;
+            2'b10:   grb_of_color = COLOR_2;
+            default: grb_of_color = COLOR_3;
+        endcase
+    endfunction
+
+    //FSM
+ 
+    typedef enum logic [1:0] {RESET_ST, LOAD_ST, HIGH_ST, LOW_ST} cur_state, next_state;
+ 
+    logic [11:0] timer;       
+    logic [7:0] led_idx;     
+    logic [4:0] bit_idx;        
+    logic [23:0] shift_reg;      
+    logic cur_bit;        
+    logic [11:0] t_high, t_low;  
+ 
+    always_ff @(posedge clock, negedge reset_n) begin
+        if (~reset_n) begin
+            timer     <= 12'd0;
+            led_idx   <= 8'd0;
+            bit_idx   <= 5'd23;
+            shift_reg <= 24'd0;
+            ws_data   <= 1'b0;
+        end
+        else begin
+            case (state)
+                RESET_ST: begin
+                    ws_data <= 1'b0;
+                    if (timer == RES_CYCLES - 1) begin
+                        timer <= 12'd0;
+                        led_idx <= 8'd0;
+                        bit_idx <= 5'd23;
+                        next_state <= LOAD_ST;
+                    end
+                    else begin
+                        timer <= timer + 12'd1;
+                        next_state <= RESET_ST;
+                    end
+                end
+                LOAD_ST: begin
+                    shift_reg <= grb_of_color(color[led_idx]);
+                    bit_idx <= 5'd23;
+                    next_state <= HIGH_ST;
+                end
+                HIGH_ST: begin
+                    cur_bit <= shift_reg[bit_idx];
+                    t_high <= shift_reg[bit_idx] ? T1H_CYCLES : T0H_CYCLES;
+                    t_low <= shift_reg[bit_idx] ? T1L_CYCLES : T0L_CYCLES;
+                    ws_data <= 1'b1;
+ 
+                    if (timer == t_high - 1) begin
+                        timer <= 12'd0;
+                        next_state <= LOW_ST;
+                    end
+                    else begin
+                        timer <= timer + 12'd1;
+                        next_state <= HIGH_ST;
+                    end
+                end
+                LOW_ST: begin
+                    ws_data <= 1'b0;
+ 
+                    if (timer == t_low - 1) begin
+                        timer <= 12'd0;
+ 
+                        if (bit_idx == 5'd0) begin
+                            if (led_idx == 8'd255) begin
+                                next_state <= RESET_ST;
+                            end
+                            else begin
+                                led_idx <= led_idx + 8'd1;
+                                next_state <= LOAD_ST;
+                            end
+                        end
+                        else begin
+                            bit_idx <= bit_idx - 5'd1;
+                            next_state <= HIGH_ST;
+                        end
+                    end
+                    else begin
+                        timer <= timer + 12'd1;
+                        next_state <= LOW_ST;
+                    end
+                end
+            endcase
+        end
+    end
+
+    always_ff @(posedge clock, negedge reset_n) begin
+        if(~reset_n) begin
+            cur_state <= RESET_ST;
+        end
+        else begin
+            cur_state <= next_state;
+        end
+    end
+ 
+endmodule : WS2812B_Driver
