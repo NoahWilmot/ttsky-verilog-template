@@ -41,7 +41,7 @@ module TileGrowth(
     //Game Stage
     logic game_start;
     //logic frozen, game_done;
-    logic game_done;
+    //logic game_done;
 
     //Cursor
     //logic [3:0] cursor_row, cursor_col;
@@ -115,7 +115,7 @@ module TileGrowth(
         .wr_col(ig_wr_col),
         .wr_data(ig_wr_data),
         //.frozen,
-        .done(game_done),
+        //.done(game_done),
         .count
     );
 
@@ -135,7 +135,7 @@ module TileGrowth(
             int row, col;
             row = i / 16;
             col = ((row % 2) == 1) ? (15 - (i % 16)) : (i % 16);
-            if((cursor_row == row) && (cursor_col == col) && !game_start) begin
+            if((int'(cursor_row) == row) && (int'(cursor_col) == col) && !game_start) begin
                 frame[i] = 24'h15_00_00;
             end
             else begin
@@ -160,7 +160,7 @@ module TileGrowth(
  
     always_ff @(posedge clock, negedge reset_n) begin
         if (~reset_n) begin
-            led_timer <= TIMER_WIDTH'd0;
+            led_timer <= '0;
             led_start <= 1'b0;
         end else begin
             led_start <= 1'b0;
@@ -361,7 +361,7 @@ module InGameFSM(
     output logic [3:0] wr_row, wr_col,
     output logic [1:0] wr_data,
     //output logic frozen,
-    output logic done,
+    //output logic done,
     output logic [7:0] count
 );
 
@@ -411,7 +411,7 @@ module InGameFSM(
     // Next-state logic
     always_comb begin
         //frozen = 1'b0;
-        done   = 1'b0;
+        //done   = 1'b0;
         case(cur_state)
             FROZEN: begin
                 if(game_start) next_state = STALL;
@@ -432,7 +432,7 @@ module InGameFSM(
             DONE: begin
                 next_state = DONE;
                 //frozen = 1'b1;
-                done   = 1'b1;
+                //done   = 1'b1;
             end
         endcase
     end
@@ -628,13 +628,13 @@ module ws2812b_driver #(parameter int CLK_MHZ = 25)(
             end
             SEND_LOW: begin
                 if (cnt == CNT_WIDTH'(cur_bit ? T1L-1 : T0L-1)) begin
-                    if (bit_idx != 5'd0) next_state  <= SEND_HIGH;
+                    if (bit_idx != 5'd0) next_state  = SEND_HIGH;
                     else begin
-                        if (led_idx == 8'd255) next_state <= RESET_PULSE;
-                        else next_state <= LOAD;
+                        if (led_idx == 8'd255) next_state = RESET_PULSE;
+                        else next_state = LOAD;
                     end     
                 end
-                else next_state <= SEND_LOW;
+                else next_state = SEND_LOW;
             end
             RESET_PULSE: begin
                 next_state = (cnt == CNT_WIDTH'(TRES - 1)) ? IDLE : RESET_PULSE;
