@@ -2,16 +2,19 @@
 
 module TileGrowth(
     input logic clock, reset_n,
-    input logic up, down, left, right,
+    input logic up, down, left, //right,
     input logic color_sel, place, start,
     output logic data,
-    output logic [7:0] count
+    //output logic [7:0] count
 );
 
-    //16x16 grid of 1 of 4 colors
-    //NOTE: Icarus does not support array slicing,
-    //so the grid is defined by 2 seperate 16 long
-    //arrays of 16 bit words
+    logic right;
+    assign right = 1'b0;
+    logic [7:0] count;
+
+    logic [3:0] cursor_row, cursor_col;
+    
+
     logic [15:0] gridl [15:0]; // low bit  
     logic [15:0] gridh [15:0]; // high bit 
 
@@ -50,22 +53,6 @@ module TileGrowth(
     logic lfsr_seed_en;
     logic [15:0] lfsr_seed;
 
-    //blink the Cursor pre-game
-    logic blink_state;
-    logic [31:0] blink_counter;
-
-    always_ff @(posedge clock, negedge reset_n) begin
-        if(~reset_n) begin
-            blink_counter <= 32'd0;
-            blink_state   <= 1'b0;
-        end
-        else if (~game_start) begin
-            blink_counter <= blink_counter + 32'd1;
-            if(blink_counter == 32'h1FFFFF)
-                blink_state <= ~blink_state;
-        end
-    end
-
     //write to the Grid
     always_ff @(posedge clock, negedge reset_n) begin
         if(~reset_n) begin
@@ -74,6 +61,21 @@ module TileGrowth(
                 gridh[r] <= 16'd0;
             end
         end
+        /*else begin
+            if(~game_start) begin
+                for(int r = 0; r < 16; r++) begin
+                    gridl[r] <= 16'hFFFF;
+                    gridh[r] <= 16'hFFFF;
+                end
+            end
+            else begin
+                for(int r = 0; r < 16; r++) begin
+                    gridl[r] <= 16'hFFFF;
+                    gridh[r] <= 16'd0;
+                end
+            end
+        end*/
+        
         else begin
             if(~game_start && pg_wr_en) begin
                 gridl[pg_wr_row][pg_wr_col] <= pg_wr_data[0];
@@ -90,7 +92,7 @@ module TileGrowth(
         .clock, .reset_n,
         .up, .down, .left, .right,
         .color_sel, .place, .start,
-        //.cursor_row, .cursor_col,
+        .cursor_row, .cursor_col,
         //.selected_color,
         .game_start,
         .wr_en(pg_wr_en),
@@ -126,10 +128,59 @@ module TileGrowth(
         .lv8, .lv12, .lv15
     );
 
-    WS2812B_Driver ws2812b (
-        .clock, .reset_n,
-        .gridl_p, .gridh_p,
-        .ws_data(data)
+    logic [255:0][23:0] frame;
+ 
+    always_comb begin
+        for (int i = 0; i < 256; i++) begin
+            int row, col;
+            row = i / 16;
+            col = ((row % 2) == 1) ? (15 - (i % 16)) : (i % 16);
+            if((cursor_row == row) && (cursor_col == col) && !game_start) begin
+                frame[i] = 24'h15_00_00;
+            end
+            else begin
+                case ({gridh[row][col], gridl[row][col]})
+                    2'b00:   frame[i] = 24'h03_03_03; // white
+                    2'b01:   frame[i] = 24'h00_00_15; // blue
+                    2'b10:   frame[i] = 24'h00_15_00; // red
+                    2'b11:   frame[i] = 24'h15_00_00; // green
+                    default: frame[i] = 24'h00_00_00;
+                endcase
+            end 
+        end
+    end
+    
+
+    localparam int HALF_SEC = 25 * 1_000_000 / 2;  // 12 500 000 cycles @ 25 MHz
+    localparam int TMR_W    = $clog2(HALF_SEC + 1);
+ 
+    logic [TMR_W-1:0] led_timer;
+    logic             led_start;
+    logic             led_busy;
+ 
+    always_ff @(posedge clock, negedge reset_n) begin
+        if (~reset_n) begin
+            led_timer <= '0;
+            led_start <= 1'b0;
+        end else begin
+            led_start <= 1'b0;
+            if (led_timer == TMR_W'(HALF_SEC - 1)) begin
+                led_timer <= '0;
+                if (!led_busy) led_start <= 1'b1;
+            end else begin
+                led_timer <= led_timer + 1'b1;
+            end
+        end
+    end
+ 
+
+    ws2812b_driver u_drv (
+        .clk          (clock),
+        .rst_n        (reset_n),
+        .pixel_matrix (frame),
+        .start        (led_start),
+        .busy         (led_busy),
+        .dout         (data)
     );
 
 endmodule : TileGrowth
@@ -139,7 +190,7 @@ module PreStartFSM(
     input logic clock, reset_n,
     input logic up, down, left, right,
     input logic color_sel, place, start,
-    //output logic [3:0] cursor_row, cursor_col,
+    output logic [3:0] cursor_row, cursor_col,
     //output logic [1:0] selected_color,
     output logic game_start,
     output logic wr_en,
@@ -149,8 +200,26 @@ module PreStartFSM(
     output logic [15:0] lfsr_seed
 );
 
-    logic [3:0] cursor_row, cursor_col;
+    //logic [3:0] cursor_row, cursor_col;
     logic [1:0] selected_color;
+
+    /*
+    //blink the Cursor pre-game
+    logic blink_state;
+    logic [31:0] blink_counter;
+
+    always_ff @(posedge clock, negedge reset_n) begin
+        if(~reset_n) begin
+            blink_counter <= 32'd0;
+            blink_state   <= 1'b0;
+        end
+        else if (~game_start) begin
+            blink_counter <= blink_counter + 32'd1;
+            if(blink_counter == 32'h1FFFFF)
+                blink_state <= ~blink_state;
+        end
+    end
+    */
 
     enum logic [2:0] {IDLE, MOVEUP, MOVEDOWN, MOVELEFT, 
                       MOVERIGHT, PLACE, START} cur_state, next_state;
@@ -268,6 +337,10 @@ module PreStartFSM(
                     if(cs_c) begin
                         selected_color <= (selected_color == 2'd1) ? 2'd2 : 2'd1;
                     end
+                    //wr_en <= 1'b1;
+                    //wr_row <= cursor_row;
+                    //wr_col <= cursor_col;
+                    //wr_data <= 2'b11;
                 end
                 default: ;
             endcase
@@ -308,8 +381,8 @@ module InGameFSM(
     enum logic [1:0] {FROZEN, STALL, SPREAD, DONE} cur_state, next_state;
 
     logic [31:0] stall_counter;
-    //localparam STALL_MAX = 32'd500_0000; // synthesis
-    localparam STALL_MAX = 32'd10;          // simulation
+    localparam STALL_MAX = 32'd500_0000; 
+    //localparam STALL_MAX = 32'd10; // simulation
 
     logic [3:0] row, col;
     logic filled;
@@ -513,141 +586,121 @@ module LFSR16(
     end
 
 endmodule : LFSR16
- 
-module WS2812B_Driver #(
-    parameter CLK_MHZ   = 50,
- 
-    parameter T0H_CYCLES = 20,   // ~400 ns @ 50 MHz
-    parameter T0L_CYCLES = 42,   // ~850 ns @ 50 MHz
-    parameter T1H_CYCLES = 40,   // ~800 ns @ 50 MHz
-    parameter T1L_CYCLES = 22,   // ~450 ns @ 50 MHz
-    parameter RES_CYCLES = 2500, // >50 µs  @ 50 MHz
- 
-    parameter [23:0] COLOR_0 = 24'h00_00_00,   // 2'b00 -> off
-    parameter [23:0] COLOR_1 = 24'h00_00_FF,   // 2'b01 -> blue, GRB: G=00 R=00 B=FF
-    parameter [23:0] COLOR_2 = 24'h00_FF_00,   // 2'b10 -> red, GRB: G=00 R=FF B=00
-    parameter [23:0] COLOR_3 = 24'hFF_FF_FF    // 2'b11 -> white, GRB: G=FF R=FF B=FF
+
+
+module ws2812b_driver #(
+    parameter int CLK_MHZ = 25
 )(
-    input  logic        clock,
-    input  logic        reset_n,
-    input  logic [255:0] gridl_p,  
-    input  logic [255:0] gridh_p,   
-    output logic        ws_data
+    input  logic clk,
+    input  logic rst_n,
+    input  logic [255:0][23:0] pixel_matrix,  
+ 
+    input  logic        start,
+    output logic        busy,
+ 
+    output logic        dout
 );
- 
-    logic [1:0] color [0:255];
- 
-    //Reconstruct the grid
 
-    genvar i;
-    generate
-        for (i = 0; i < 256; i++) begin : 
-            assign color[i] = {gridh_p[i], gridl_p[i]};
-        end
-    endgenerate
+    localparam int T0H  = (CLK_MHZ * 400)   / 1000;
+    localparam int T0L  = (CLK_MHZ * 850)   / 1000;
+    localparam int T1H  = (CLK_MHZ * 800)   / 1000;
+    localparam int T1L  = (CLK_MHZ * 450)   / 1000;
+    localparam int TRES = (CLK_MHZ * 60000) / 1000;  
  
-    //Color lookup
-
-    function automatic [23:0] grb_of_color;
-        input [1:0] c;
-        case (c)
-            2'b00:   grb_of_color = COLOR_0;
-            2'b01:   grb_of_color = COLOR_1;
-            2'b10:   grb_of_color = COLOR_2;
-            default: grb_of_color = COLOR_3;
-        endcase
-    endfunction
-
-    //FSM
+    localparam int CNT_W = $clog2(TRES + 1);
  
-    typedef enum logic [1:0] {RESET_ST, LOAD_ST, HIGH_ST, LOW_ST} cur_state, next_state;
+    typedef enum logic [2:0] {
+        IDLE,
+        LOAD,        
+        SEND_HIGH,  
+        SEND_LOW,    
+        RESET_PULSE  
+    } state_t;
  
-    logic [11:0] timer;       
-    logic [7:0] led_idx;     
-    logic [4:0] bit_idx;        
-    logic [23:0] shift_reg;      
-    logic cur_bit;        
-    logic [11:0] t_high, t_low;  
+    state_t           state;
+    logic [CNT_W-1:0] cnt;
+    logic [4:0]       bit_idx;   
+    logic [7:0]       led_idx;  
+    logic [23:0]      shift_reg; 
+    logic             cur_bit;   
  
-    always_ff @(posedge clock, negedge reset_n) begin
-        if (~reset_n) begin
-            timer     <= 12'd0;
-            led_idx   <= 8'd0;
+    assign busy = (state != IDLE);
+ 
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            state     <= IDLE;
+            dout      <= 1'b0;
+            cnt       <= '0;
             bit_idx   <= 5'd23;
+            led_idx   <= 8'd0;
             shift_reg <= 24'd0;
-            ws_data   <= 1'b0;
-        end
-        else begin
+            cur_bit   <= 1'b0;
+        end else begin
             case (state)
-                RESET_ST: begin
-                    ws_data <= 1'b0;
-                    if (timer == RES_CYCLES - 1) begin
-                        timer <= 12'd0;
+ 
+                IDLE: begin
+                    dout <= 1'b0;
+                    if (start) begin
                         led_idx <= 8'd0;
                         bit_idx <= 5'd23;
-                        next_state <= LOAD_ST;
-                    end
-                    else begin
-                        timer <= timer + 12'd1;
-                        next_state <= RESET_ST;
+                        cnt     <= '0;
+                        state   <= LOAD;
                     end
                 end
-                LOAD_ST: begin
-                    shift_reg <= grb_of_color(color[led_idx]);
-                    bit_idx <= 5'd23;
-                    next_state <= HIGH_ST;
-                end
-                HIGH_ST: begin
-                    cur_bit <= shift_reg[bit_idx];
-                    t_high <= shift_reg[bit_idx] ? T1H_CYCLES : T0H_CYCLES;
-                    t_low <= shift_reg[bit_idx] ? T1L_CYCLES : T0L_CYCLES;
-                    ws_data <= 1'b1;
  
-                    if (timer == t_high - 1) begin
-                        timer <= 12'd0;
-                        next_state <= LOW_ST;
-                    end
-                    else begin
-                        timer <= timer + 12'd1;
-                        next_state <= HIGH_ST;
+                LOAD: begin
+                    shift_reg <= pixel_matrix[led_idx];
+                    cur_bit   <= pixel_matrix[led_idx][23];  
+                    cnt       <= '0;
+                    state     <= SEND_HIGH;
+                end
+ 
+                SEND_HIGH: begin
+                    dout <= 1'b1;
+                    if (cnt == CNT_W'(cur_bit ? T1H-1 : T0H-1)) begin
+                        cnt   <= '0;
+                        state <= SEND_LOW;
+                    end else begin
+                        cnt <= cnt + 1'b1;
                     end
                 end
-                LOW_ST: begin
-                    ws_data <= 1'b0;
  
-                    if (timer == t_low - 1) begin
-                        timer <= 12'd0;
- 
-                        if (bit_idx == 5'd0) begin
+                SEND_LOW: begin
+                    dout <= 1'b0;
+                    if (cnt == CNT_W'(cur_bit ? T1L-1 : T0L-1)) begin
+                        cnt <= '0;
+                        if (bit_idx != 5'd0) begin
+                            bit_idx <= bit_idx - 1'b1;
+                            cur_bit <= shift_reg[bit_idx - 1];
+                            state   <= SEND_HIGH;
+                        end else begin
+                            bit_idx <= 5'd23;
                             if (led_idx == 8'd255) begin
-                                next_state <= RESET_ST;
-                            end
-                            else begin
-                                led_idx <= led_idx + 8'd1;
-                                next_state <= LOAD_ST;
+                                state <= RESET_PULSE;
+                            end else begin
+                                led_idx <= led_idx + 1'b1;
+                                state   <= LOAD;
                             end
                         end
-                        else begin
-                            bit_idx <= bit_idx - 5'd1;
-                            next_state <= HIGH_ST;
-                        end
-                    end
-                    else begin
-                        timer <= timer + 12'd1;
-                        next_state <= LOW_ST;
+                    end else begin
+                        cnt <= cnt + 1'b1;
                     end
                 end
+ 
+                RESET_PULSE: begin
+                    dout <= 1'b0;
+                    if (cnt == CNT_W'(TRES - 1)) begin
+                        cnt   <= '0;
+                        state <= IDLE;
+                    end else begin
+                        cnt <= cnt + 1'b1;
+                    end
+                end
+ 
+                default: state <= IDLE;
+ 
             endcase
         end
     end
-
-    always_ff @(posedge clock, negedge reset_n) begin
-        if(~reset_n) begin
-            cur_state <= RESET_ST;
-        end
-        else begin
-            cur_state <= next_state;
-        end
-    end
+endmodule : ws2812b_driver
  
-endmodule : WS2812B_Driver
