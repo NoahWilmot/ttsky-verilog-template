@@ -160,7 +160,7 @@ module TileGrowth(
  
     always_ff @(posedge clock, negedge reset_n) begin
         if (~reset_n) begin
-            led_timer <= TIMER_WIDTH'd0;
+            led_timer <= '0;
             led_start <= 1'b0;
         end else begin
             led_start <= 1'b0;
