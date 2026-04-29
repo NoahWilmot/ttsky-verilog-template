@@ -2,15 +2,15 @@
 
 module TileGrowth(
     input logic clock, reset_n,
-    input logic up, down, left, //right,
+    input logic up, down, left, right,
     input logic color_sel, place, start,
     output logic data,
-    //output logic [7:0] count
+    output logic [7:0] count
 );
 
-    logic right;
-    assign right = 1'b0;
-    logic [7:0] count;
+    //logic right;
+    //assign right = 1'b0;
+    //logic [7:0] count;
 
     logic [3:0] cursor_row, cursor_col;
     
@@ -151,20 +151,20 @@ module TileGrowth(
     end
     
 
-    localparam int HALF_SEC = 25 * 1_000_000 / 2;  // 12 500 000 cycles @ 25 MHz
-    localparam int TMR_W    = $clog2(HALF_SEC + 1);
+    localparam int WAIT_T = 25 * 1_000_000 / 2; //half a second
+    localparam int TIMER_WIDTH    = $clog2(WAIT_T + 1);
  
-    logic [TMR_W-1:0] led_timer;
+    logic [TIMER_WIDTH-1:0] led_timer;
     logic             led_start;
     logic             led_busy;
  
     always_ff @(posedge clock, negedge reset_n) begin
         if (~reset_n) begin
-            led_timer <= '0;
+            led_timer <= TIMER_WIDTH'd0;
             led_start <= 1'b0;
         end else begin
             led_start <= 1'b0;
-            if (led_timer == TMR_W'(HALF_SEC - 1)) begin
+            if (led_timer == TIMER_WIDTH'(WAIT_T - 1)) begin
                 led_timer <= '0;
                 if (!led_busy) led_start <= 1'b1;
             end else begin
@@ -175,12 +175,12 @@ module TileGrowth(
  
 
     ws2812b_driver u_drv (
-        .clk          (clock),
-        .rst_n        (reset_n),
-        .pixel_matrix (frame),
-        .start        (led_start),
-        .busy         (led_busy),
-        .dout         (data)
+        .clock,
+        .reset_n,
+        .pixel_matrix(frame),
+        .start(led_start),
+        .busy(led_busy),
+        .dout(data)
     );
 
 endmodule : TileGrowth
@@ -588,47 +588,63 @@ module LFSR16(
 endmodule : LFSR16
 
 
-module ws2812b_driver #(
-    parameter int CLK_MHZ = 25
-)(
-    input  logic clk,
-    input  logic rst_n,
+module ws2812b_driver #(parameter int CLK_MHZ = 25)(
+    input  logic clock,
+    input  logic reset_n,
     input  logic [255:0][23:0] pixel_matrix,  
- 
-    input  logic        start,
-    output logic        busy,
- 
-    output logic        dout
+    input  logic start,
+    output logic busy,
+    output logic dout
 );
 
-    localparam int T0H  = (CLK_MHZ * 400)   / 1000;
-    localparam int T0L  = (CLK_MHZ * 850)   / 1000;
-    localparam int T1H  = (CLK_MHZ * 800)   / 1000;
-    localparam int T1L  = (CLK_MHZ * 450)   / 1000;
+    localparam int T0H  = (CLK_MHZ * 400) / 1000;
+    localparam int T0L  = (CLK_MHZ * 850) / 1000;
+    localparam int T1H  = (CLK_MHZ * 800) / 1000;
+    localparam int T1L  = (CLK_MHZ * 450) / 1000;
     localparam int TRES = (CLK_MHZ * 60000) / 1000;  
  
-    localparam int CNT_W = $clog2(TRES + 1);
+    localparam int CNT_WIDTH = $clog2(TRES + 1);
  
-    typedef enum logic [2:0] {
-        IDLE,
-        LOAD,        
-        SEND_HIGH,  
-        SEND_LOW,    
-        RESET_PULSE  
-    } state_t;
+    enum logic [2:0] {IDLE, LOAD, SEND_HIGH, SEND_LOW, RESET_PULSE} cur_state, next_state;
  
-    state_t           state;
-    logic [CNT_W-1:0] cnt;
-    logic [4:0]       bit_idx;   
-    logic [7:0]       led_idx;  
-    logic [23:0]      shift_reg; 
-    logic             cur_bit;   
+    logic [CNT_WIDTH-1:0] cnt;
+    logic [4:0] bit_idx;   
+    logic [7:0] led_idx;  
+    logic [23:0] shift_reg; 
+    logic cur_bit;   
  
-    assign busy = (state != IDLE);
+    assign busy = (cur_state != IDLE);
+
+    always_comb begin
+        case(cur_state)
+            IDLE: begin
+                next_state = start ? LOAD : IDLE;
+            end
+            LOAD: begin
+                next_state = SEND_HIGH;
+            end
+            SEND_HIGH: begin
+                next_state = (cnt == CNT_WIDTH'(cur_bit ? T1H-1 : T0H-1)) ? SEND_LOW : SEND_HIGH;    
+            end
+            SEND_LOW: begin
+                if (cnt == CNT_WIDTH'(cur_bit ? T1L-1 : T0L-1)) begin
+                    if (bit_idx != 5'd0) next_state  <= SEND_HIGH;
+                    else begin
+                        if (led_idx == 8'd255) next_state <= RESET_PULSE;
+                        else next_state <= LOAD;
+                    end     
+                end
+                else next_state <= SEND_LOW;
+            end
+            RESET_PULSE: begin
+                next_state = (cnt == CNT_WIDTH'(TRES - 1)) ? IDLE : RESET_PULSE;
+            end
+            default: next_state = IDLE;
+        endcase
+    end
  
-    always_ff @(posedge clk or negedge rst_n) begin
-        if (!rst_n) begin
-            state     <= IDLE;
+    always_ff @(posedge clock, negedge reset_n) begin
+        if (~reset_n) begin
             dout      <= 1'b0;
             cnt       <= '0;
             bit_idx   <= 5'd23;
@@ -636,71 +652,66 @@ module ws2812b_driver #(
             shift_reg <= 24'd0;
             cur_bit   <= 1'b0;
         end else begin
-            case (state)
- 
+            case (cur_state)
                 IDLE: begin
                     dout <= 1'b0;
                     if (start) begin
                         led_idx <= 8'd0;
                         bit_idx <= 5'd23;
                         cnt     <= '0;
-                        state   <= LOAD;
                     end
                 end
- 
                 LOAD: begin
                     shift_reg <= pixel_matrix[led_idx];
                     cur_bit   <= pixel_matrix[led_idx][23];  
                     cnt       <= '0;
-                    state     <= SEND_HIGH;
                 end
- 
                 SEND_HIGH: begin
                     dout <= 1'b1;
-                    if (cnt == CNT_W'(cur_bit ? T1H-1 : T0H-1)) begin
+                    if (cnt == CNT_WIDTH'(cur_bit ? T1H-1 : T0H-1)) begin
                         cnt   <= '0;
-                        state <= SEND_LOW;
                     end else begin
                         cnt <= cnt + 1'b1;
                     end
                 end
- 
                 SEND_LOW: begin
                     dout <= 1'b0;
-                    if (cnt == CNT_W'(cur_bit ? T1L-1 : T0L-1)) begin
+                    if (cnt == CNT_WIDTH'(cur_bit ? T1L-1 : T0L-1)) begin
                         cnt <= '0;
                         if (bit_idx != 5'd0) begin
                             bit_idx <= bit_idx - 1'b1;
                             cur_bit <= shift_reg[bit_idx - 1];
-                            state   <= SEND_HIGH;
                         end else begin
                             bit_idx <= 5'd23;
-                            if (led_idx == 8'd255) begin
-                                state <= RESET_PULSE;
-                            end else begin
+                            if (led_idx != 8'd255) begin
                                 led_idx <= led_idx + 1'b1;
-                                state   <= LOAD;
                             end
                         end
                     end else begin
                         cnt <= cnt + 1'b1;
                     end
                 end
- 
                 RESET_PULSE: begin
                     dout <= 1'b0;
-                    if (cnt == CNT_W'(TRES - 1)) begin
+                    if (cnt == CNT_WIDTH'(TRES - 1)) begin
                         cnt   <= '0;
-                        state <= IDLE;
                     end else begin
                         cnt <= cnt + 1'b1;
                     end
                 end
- 
-                default: state <= IDLE;
- 
+                default: ;
             endcase
         end
     end
+
+    always_ff @(posedge clock, negedge reset_n) begin
+        if(~reset_n) begin 
+            cur_state <= IDLE;
+        end
+        else begin
+            cur_state <= next_state;
+        end
+    end
+
 endmodule : ws2812b_driver
  
