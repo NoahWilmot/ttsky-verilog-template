@@ -104,11 +104,12 @@ module StimulusGen (
                 next_state = gen_pulse ? SWEEP : IDLE;
             end
             SWEEP: begin
-                next_state = ((s_col == 4'd15) && (s_row == 4'd15)) ? DONE ? SWEEP;
+                next_state = ((s_col == 4'd15) && (s_row == 4'd15)) ? DONE : SWEEP;
             end
             DONE: begin
                 next_state = IDLE;
             end
+            default: next_state = IDLE;
         endcase
     end
 
@@ -124,7 +125,7 @@ module StimulusGen (
             wr_data    <= 2'd0;
         end else begin
             wr_en <= 1'b0;
-            case (state)
+            case (cur_state)
                 IDLE: begin
                     wants_ctrl <= 1'b0;
                     if (gen_pulse) begin
