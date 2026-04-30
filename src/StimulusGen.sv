@@ -101,10 +101,12 @@ module StimulusGen (
     always_comb begin
         case(cur_state)
             IDLE: begin
-                next_state = gen_pulse ? SWEEP : IDLE;
+                if(gen_pulse) next_state = SWEEP;
+                else next_state = IDLE;
             end
             SWEEP: begin
-                next_state = ((s_col == 4'd15) && (s_row == 4'd15)) ? DONE : SWEEP;
+                if((s_col == 4'd15) && (s_row == 4'd15)) next_state = DONE;
+                else next_state = SWEEP;
             end
             DONE: begin
                 next_state = IDLE;
