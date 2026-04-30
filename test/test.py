@@ -3,7 +3,7 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge, FallingEdge
+from cocotb.triggers import ClockCycles
 
 # =============================================================================
 # Pin mapping (from tt_um_example):
@@ -14,33 +14,31 @@ from cocotb.triggers import ClockCycles, RisingEdge, FallingEdge
 #   uo_out[3:0]   -> wr_row
 #   uo_out[7:4]   -> wr_col
 #
-# Debounce: StimulusGen STABLE_MS parameter must be small for simulation.
-# Set STABLE_MS=1 in StimulusGen for TT sim (1000 cycles at 25MHz = 40us,
-# manageable in simulation).
+# STABLE_MS=1 via -DSIM in Makefile -> debounce = 1000 cycles
 # =============================================================================
 
-STABLE_CYCLES = 1100   # slightly more than STABLE_MS*1000 cycles to clear debounce
+STABLE_CYCLES = 1100   # STABLE_MS=1 at 25MHz = 1000 cycles + margin
 
 # -----------------------------------------------------------------------------
-# Helpers
+# Helpers — use .integer to convert LogicArray to int (cocotb v2.0)
 # -----------------------------------------------------------------------------
 
 def get_wants_ctrl(dut):
-    return (dut.uio_out.value & 0x01) != 0
+    return (int(dut.uio_out.value) & 0x01) != 0
 
 def get_wr_en(dut):
-    return (dut.uio_out.value & 0x02) != 0
+    return (int(dut.uio_out.value) & 0x02) != 0
 
 def get_wr_data(dut):
-    return (dut.uio_out.value >> 2) & 0x03
+    return (int(dut.uio_out.value) >> 2) & 0x03
 
 def get_wr_row(dut):
-    return dut.uo_out.value & 0x0F
+    return int(dut.uo_out.value) & 0x0F
 
 def get_wr_col(dut):
-    return (dut.uo_out.value >> 4) & 0x0F
+    return (int(dut.uo_out.value) >> 4) & 0x0F
 
-async def reset(dut):
+async def do_reset(dut):
     dut.ui_in.value  = 0
     dut.uio_in.value = 0
     dut.ena.value    = 1
@@ -51,23 +49,20 @@ async def reset(dut):
 
 async def press_gen(dut):
     """Hold gen high long enough to pass debouncer then release."""
-    dut.ui_in.value = 0x01   # gen = ui_in[0] = 1
+    dut.ui_in.value = 0x01
     await ClockCycles(dut.clk, STABLE_CYCLES)
-    dut.ui_in.value = 0x00   # release
+    dut.ui_in.value = 0x00
     await ClockCycles(dut.clk, 2)
 
 async def run_sweep(dut):
     """
     Wait for wants_ctrl to go high then monitor until it drops.
-    Returns: (write_count, pattern_set)
-      write_count  -- number of wr_en pulses seen
-      pattern_set  -- set of (row, col) tuples that were written
+    Returns: (write_count, pattern, errors)
     """
     errors = []
 
-    # Wait for wants_ctrl
-    timeout = 50
-    for _ in range(timeout):
+    # Wait for wants_ctrl to go high
+    for _ in range(50):
         await ClockCycles(dut.clk, 1)
         if get_wants_ctrl(dut):
             break
@@ -88,15 +83,12 @@ async def run_sweep(dut):
             row = get_wr_row(dut)
             col = get_wr_col(dut)
 
-            # wr_data must be 1 or 2
             if wd not in (1, 2):
                 errors.append(f"wr_data={wd} invalid at row={row} col={col}")
 
-            # row and col in range
             if row > 15 or col > 15:
                 errors.append(f"out of range: row={row} col={col}")
 
-            # wants_ctrl must be high
             if not get_wants_ctrl(dut):
                 errors.append("wr_en high but wants_ctrl low")
 
@@ -107,7 +99,6 @@ async def run_sweep(dut):
             errors.append("sweep took more than 300 cycles, possible hang")
             break
 
-    # Sweep should take exactly 257 cycles (256 SWEEP + 1 DONE)
     if sweep_cycles != 257:
         errors.append(f"sweep took {sweep_cycles} cycles, expected 257")
 
@@ -123,10 +114,10 @@ async def test_basic_sweep(dut):
     """Test 1: Basic sweep — wants_ctrl, duration, data validity."""
     dut._log.info("Starting test_basic_sweep")
 
-    clock = Clock(dut.clk, 40, unit="ns")   # 25 MHz
+    clock = Clock(dut.clk, 40, unit="ns")
     cocotb.start_soon(clock.start())
 
-    await reset(dut)
+    await do_reset(dut)
 
     dut._log.info("Pressing gen...")
     await press_gen(dut)
@@ -136,9 +127,7 @@ async def test_basic_sweep(dut):
     for e in errors:
         dut._log.error(f"FAIL: {e}")
 
-    assert len(errors) == 0, f"test_basic_sweep had {len(errors)} error(s)"
-
-    # wants_ctrl should now be low
+    assert len(errors) == 0, f"test_basic_sweep had {len(errors)} error(s): {errors}"
     assert not get_wants_ctrl(dut), "FAIL: wants_ctrl still high after sweep"
 
     dut._log.info(f"PASS: sweep complete, {count} tiles written")
@@ -152,18 +141,15 @@ async def test_different_patterns(dut):
     clock = Clock(dut.clk, 40, unit="ns")
     cocotb.start_soon(clock.start())
 
-    await reset(dut)
+    await do_reset(dut)
 
-    # First press
     await press_gen(dut)
     _, pattern_a, errors_a = await run_sweep(dut)
     for e in errors_a:
         dut._log.error(f"Sweep 1 FAIL: {e}")
 
-    # Wait between presses so free_cnt advances
     await ClockCycles(dut.clk, 20)
 
-    # Second press
     await press_gen(dut)
     _, pattern_b, errors_b = await run_sweep(dut)
     for e in errors_b:
@@ -183,22 +169,20 @@ async def test_wr_en_only_during_ctrl(dut):
     clock = Clock(dut.clk, 40, unit="ns")
     cocotb.start_soon(clock.start())
 
-    await reset(dut)
+    await do_reset(dut)
 
-    # Check before any gen press — both should be low
     await ClockCycles(dut.clk, 10)
     assert not get_wants_ctrl(dut), "FAIL: wants_ctrl high before gen press"
     assert not get_wr_en(dut),      "FAIL: wr_en high before gen press"
 
-    # Run a sweep and check wr_en after
     await press_gen(dut)
     _, _, errors = await run_sweep(dut)
 
-    # After sweep, check again
     await ClockCycles(dut.clk, 5)
-    assert not get_wr_en(dut), "FAIL: wr_en still high after sweep"
+    assert not get_wants_ctrl(dut), "FAIL: wants_ctrl still high after sweep"
+    assert not get_wr_en(dut),      "FAIL: wr_en still high after sweep"
 
-    assert len(errors) == 0
+    assert len(errors) == 0, f"Errors during sweep: {errors}"
     dut._log.info("PASS: wr_en only fired during wants_ctrl")
 
 
@@ -210,7 +194,7 @@ async def test_wr_data_valid(dut):
     clock = Clock(dut.clk, 40, unit="ns")
     cocotb.start_soon(clock.start())
 
-    await reset(dut)
+    await do_reset(dut)
 
     await press_gen(dut)
     _, _, errors = await run_sweep(dut)
