@@ -52,9 +52,9 @@ async def gen_and_sweep(dut):
         assert cycles <= 300, "sweep took too long"
     assert cycles == 257, f"sweep took {cycles} cycles, expected 257"
 
-    # Release gen
+    # Release gen and wait for debouncer to register the release
     dut.ui_in.value = 0x00
-    await ClockCycles(dut.clk, 5)
+    await ClockCycles(dut.clk, DEBOUNCE_CYCLES + 5)
     return pattern
 
 
