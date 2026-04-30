@@ -14,10 +14,10 @@ from cocotb.triggers import ClockCycles
 #   uo_out[3:0]   -> wr_row
 #   uo_out[7:4]   -> wr_col
 #
-# STABLE_MS=1 via -DSIM in Makefile -> debounce = 1000 cycles
+# STABLE_MS=1 via -DSIM in Makefile -> debounce = CLK_MHZ*1000*1 = 25000 cycles
 # =============================================================================
 
-STABLE_CYCLES = 1100   # STABLE_MS=1 at 25MHz = 1000 cycles + margin
+STABLE_CYCLES = 26000  # STABLE_MS=1, CLK_MHZ=25 -> 25000 cycles + margin
 
 # -----------------------------------------------------------------------------
 # Helpers — use .integer to convert LogicArray to int (cocotb v2.0)
@@ -61,8 +61,8 @@ async def run_sweep(dut):
     """
     errors = []
 
-    # Wait for wants_ctrl to go high
-    for _ in range(50):
+    # Wait for wants_ctrl to go high — gen_pulse fires 1 cycle after debounce clears
+    for _ in range(10):
         await ClockCycles(dut.clk, 1)
         if get_wants_ctrl(dut):
             break
