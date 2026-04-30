@@ -5,14 +5,6 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
-STABLE_CYCLES = 26000
-
-def wants_ctrl(dut): return (int(dut.uio_out.value) & 0x01) != 0
-def wr_en(dut):      return (int(dut.uio_out.value) & 0x02) != 0
-def wr_data(dut):    return (int(dut.uio_out.value) >> 2) & 0x03
-def wr_row(dut):     return  int(dut.uo_out.value)        & 0x0F
-def wr_col(dut):     return (int(dut.uo_out.value) >> 4)  & 0x0F
-
 async def init(dut):
     cocotb.start_soon(Clock(dut.clk, 40, unit="ns").start())
     dut.ui_in.value  = 0
@@ -27,22 +19,20 @@ async def init(dut):
 async def test_debug(dut):
     await init(dut)
 
-    # Sample before press
-    dut._log.info(f"Before press: ui_in={int(dut.ui_in.value)} uio_out={int(dut.uio_out.value)} uo_out={int(dut.uo_out.value)}")
+    # Probe internal signals
+    sg = dut.user_project.SG
 
-    # Press gen
+    dut._log.info(f"cur_state={int(sg.cur_state.value)} gen_pulse={int(sg.gen_pulse.value)} wants_ctrl={int(sg.wants_ctrl.value)}")
+
     dut.ui_in.value = 0x01
-    dut._log.info(f"Gen pressed")
+    dut._log.info("Gen pressed")
 
-    # Sample every 5000 cycles during press
-    for i in range(6):
+    for i in range(7):
         await ClockCycles(dut.clk, 5000)
-        dut._log.info(f"  t={i*5000+5000} cycles: ui_in={int(dut.ui_in.value)} uio_out={int(dut.uio_out.value):08b} wants_ctrl={wants_ctrl(dut)}")
+        dut._log.info(f"t={i*5000+5000}: cur_state={int(sg.cur_state.value)} gen_pulse={int(sg.gen_pulse.value)} gen_stable={int(sg.gen_stable.value)} wants_ctrl={int(sg.wants_ctrl.value)} deb_cnt={int(sg.deb_cnt.value)}")
 
-    # Release
     dut.ui_in.value = 0x00
-    dut._log.info(f"Gen released")
     await ClockCycles(dut.clk, 10)
-    dut._log.info(f"After release: uio_out={int(dut.uio_out.value):08b} wants_ctrl={wants_ctrl(dut)}")
+    dut._log.info(f"After release: cur_state={int(sg.cur_state.value)} wants_ctrl={int(sg.wants_ctrl.value)}")
 
     assert True
