@@ -15,11 +15,14 @@ module StimulusGen (
     // Debounce gen
     // -------------------------------------------------------------------------
     localparam int CLK_MHZ = 25;
+    /*
     `ifdef SIM
         localparam int STABLE_MS = 1;
     `else
         localparam int STABLE_MS = 20;
     `endif
+    */
+    localparam int STABLE_MS = 1;
     localparam int STABLE_CNT = CLK_MHZ * 1000 * STABLE_MS;
 
     localparam int DEB_W = $clog2(STABLE_CNT + 1);
