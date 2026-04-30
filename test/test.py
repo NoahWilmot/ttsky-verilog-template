@@ -5,7 +5,8 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles
 
-STABLE_CYCLES = 25100  # debounce fires at ~25002 cycles, +margin
+# Debounce fires at cycle 25002 (CLK_MHZ=25, STABLE_MS=1 -> 25000 cycles + 2 sync)
+DEBOUNCE_CYCLES = 25002
 
 def wants_ctrl(dut): return (int(dut.uio_out.value) & 0x01) != 0
 def wr_en(dut):      return (int(dut.uio_out.value) & 0x02) != 0
@@ -23,14 +24,13 @@ async def init(dut):
     dut.rst_n.value  = 1
     await ClockCycles(dut.clk, 5)
 
-async def press_gen(dut):
+async def gen_and_sweep(dut):
+    """Press gen, wait for debounce, monitor full sweep, release gen."""
+    # Hold gen high until debounce fires
     dut.ui_in.value = 0x01
-    await ClockCycles(dut.clk, STABLE_CYCLES)
-    dut.ui_in.value = 0x00
-    await ClockCycles(dut.clk, 5)
+    await ClockCycles(dut.clk, DEBOUNCE_CYCLES)
 
-async def sweep(dut):
-    # wants_ctrl should already be high by now — poll a few cycles just in case
+    # Poll for wants_ctrl (fires 1-2 cycles after debounce)
     for _ in range(10):
         if wants_ctrl(dut):
             break
@@ -38,6 +38,7 @@ async def sweep(dut):
     else:
         assert False, "wants_ctrl did not go high"
 
+    # Monitor sweep
     pattern = set()
     cycles = 0
     while wants_ctrl(dut):
@@ -50,25 +51,26 @@ async def sweep(dut):
             pattern.add((wr_row(dut), wr_col(dut)))
         assert cycles <= 300, "sweep took too long"
     assert cycles == 257, f"sweep took {cycles} cycles, expected 257"
+
+    # Release gen
+    dut.ui_in.value = 0x00
+    await ClockCycles(dut.clk, 5)
     return pattern
 
 
 @cocotb.test()
 async def test_basic_sweep(dut):
     await init(dut)
-    await press_gen(dut)
-    await sweep(dut)
+    await gen_and_sweep(dut)
     assert not wants_ctrl(dut)
 
 
 @cocotb.test()
 async def test_different_patterns(dut):
     await init(dut)
-    await press_gen(dut)
-    pattern_a = await sweep(dut)
+    pattern_a = await gen_and_sweep(dut)
     await ClockCycles(dut.clk, 20)
-    await press_gen(dut)
-    pattern_b = await sweep(dut)
+    pattern_b = await gen_and_sweep(dut)
     assert pattern_a != pattern_b
 
 
@@ -78,7 +80,6 @@ async def test_wr_en_gated(dut):
     await ClockCycles(dut.clk, 10)
     assert not wants_ctrl(dut)
     assert not wr_en(dut)
-    await press_gen(dut)
-    await sweep(dut)
+    await gen_and_sweep(dut)
     assert not wants_ctrl(dut)
     assert not wr_en(dut)
