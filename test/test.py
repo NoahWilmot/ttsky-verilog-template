@@ -3,7 +3,15 @@
 
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge
+from cocotb.triggers import ClockCycles
+
+STABLE_CYCLES = 25100  # debounce fires at ~25002 cycles, +margin
+
+def wants_ctrl(dut): return (int(dut.uio_out.value) & 0x01) != 0
+def wr_en(dut):      return (int(dut.uio_out.value) & 0x02) != 0
+def wr_data(dut):    return (int(dut.uio_out.value) >> 2) & 0x03
+def wr_row(dut):     return  int(dut.uo_out.value)        & 0x0F
+def wr_col(dut):     return (int(dut.uo_out.value) >> 4)  & 0x0F
 
 async def init(dut):
     cocotb.start_soon(Clock(dut.clk, 40, unit="ns").start())
@@ -15,20 +23,62 @@ async def init(dut):
     dut.rst_n.value  = 1
     await ClockCycles(dut.clk, 5)
 
-@cocotb.test()
-async def test_debug(dut):
-    await init(dut)
-
-    sg = dut.user_project.SG
-
+async def press_gen(dut):
     dut.ui_in.value = 0x01
+    await ClockCycles(dut.clk, STABLE_CYCLES)
+    dut.ui_in.value = 0x00
+    await ClockCycles(dut.clk, 5)
 
-    # Wait until just before debounce fires
-    await ClockCycles(dut.clk, 24990)
+async def sweep(dut):
+    # wants_ctrl should already be high by now — poll a few cycles just in case
+    for _ in range(10):
+        if wants_ctrl(dut):
+            break
+        await ClockCycles(dut.clk, 1)
+    else:
+        assert False, "wants_ctrl did not go high"
 
-    # Sample every single cycle for 20 cycles around the firing point
-    for i in range(20):
-        await RisingEdge(dut.clk)
-        dut._log.info(f"cycle {24990+i}: gen_pulse={int(sg.gen_pulse.value)} gen_stable={int(sg.gen_stable.value)} cur_state={int(sg.cur_state.value)} next_state={int(sg.next_state.value)} wants_ctrl={int(sg.wants_ctrl.value)} deb_cnt={int(sg.deb_cnt.value)}")
+    pattern = set()
+    cycles = 0
+    while wants_ctrl(dut):
+        await ClockCycles(dut.clk, 1)
+        cycles += 1
+        if wr_en(dut):
+            assert wr_data(dut) in (1, 2)
+            assert wr_row(dut) <= 15
+            assert wr_col(dut) <= 15
+            pattern.add((wr_row(dut), wr_col(dut)))
+        assert cycles <= 300, "sweep took too long"
+    assert cycles == 257, f"sweep took {cycles} cycles, expected 257"
+    return pattern
 
-    assert True
+
+@cocotb.test()
+async def test_basic_sweep(dut):
+    await init(dut)
+    await press_gen(dut)
+    await sweep(dut)
+    assert not wants_ctrl(dut)
+
+
+@cocotb.test()
+async def test_different_patterns(dut):
+    await init(dut)
+    await press_gen(dut)
+    pattern_a = await sweep(dut)
+    await ClockCycles(dut.clk, 20)
+    await press_gen(dut)
+    pattern_b = await sweep(dut)
+    assert pattern_a != pattern_b
+
+
+@cocotb.test()
+async def test_wr_en_gated(dut):
+    await init(dut)
+    await ClockCycles(dut.clk, 10)
+    assert not wants_ctrl(dut)
+    assert not wr_en(dut)
+    await press_gen(dut)
+    await sweep(dut)
+    assert not wants_ctrl(dut)
+    assert not wr_en(dut)
