@@ -30,8 +30,13 @@ async def press_gen(dut):
 
 async def sweep(dut):
     """Run one full sweep, return set of (row,col) cells written."""
-    await ClockCycles(dut.clk, 1)
-    assert wants_ctrl(dut), "wants_ctrl did not go high"
+    # Wait for wants_ctrl — gen_pulse fires then FSM needs a cycle to assert it
+    for _ in range(10):
+        await ClockCycles(dut.clk, 1)
+        if wants_ctrl(dut):
+            break
+    else:
+        assert False, "wants_ctrl did not go high"
     pattern = set()
     cycles = 0
     while wants_ctrl(dut):
