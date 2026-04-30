@@ -16,15 +16,17 @@ module tt_um_example (
     input  wire       rst_n     // reset_n - low to reset
 );
 
-  TileGrowth TG(.clock(clk), .reset_n(rst_n), .up(ui_in[0]), .down(ui_in[1]), .left(ui_in[2]), .right(ui_in[3]), .color_sel(ui_in[4]), .place(ui_in[5]), .start(ui_in[6]), .data(uo_out[0]), .count(uio_out));
+  StimulusGen SG(.clock(clk), .reset_n(rst_n), .gen(ui_in[0]), .wants_ctrl(uio_out[0]), .wr_en(uio_out[1]), .wr_data(uio_out[3:2]), wr_row(uo_out[3:0]), wr_col(uo_out[7:4]));
+  //TileGrowth TG(.clock(clk), .reset_n(rst_n), .up(ui_in[0]), .down(ui_in[1]), .left(ui_in[2]), .right(ui_in[3]), .color_sel(ui_in[4]), .place(ui_in[5]), .start(ui_in[6]), .data(uo_out[0]), .count(uio_out));
   //RangeFinder #(8) RF(.data_in(ui_in), .clock(clk),. reset(reset), .go(uio_in[0]), .finish(uio_in[1]), .range(uo_out), .error(uio_out[2]));
 
   // All output pins must be assigned. If not used, assign to 0.
   //assign uo_out  = ui_in + uio_in;  // Example: ou_out is the sum of ui_in and uio_in
-  assign uio_oe  = 8'b1111_1111;
-  assign uo_out[7:1] = 7'b000_0000;
+  assign uio_oe  = 8'b0000_1111;
+  //assign uo_out[7:1] = 7'b000_0000;
+  assign uio_out[7:4] = 4'b0000;
 
   // List all unused inputs to prevent warnings
-  wire _unused = &{ena, uio_in,  ui_in[7], 1'b0};
+  wire _unused = &{ena, uio_in,  ui_in[7:1], 1'b0};
 
 endmodule
