@@ -75,6 +75,7 @@ module StimulusGen (
     ////////////////////////////////////////////
 
     localparam logic [15:0] FIXED_SEED = 16'hD59B;
+    logic [15:0] seed;
 
     assign seed = FIXED_SEED ^ free_cnt;
 
