@@ -11,24 +11,17 @@ module StimulusGen (
     output logic [1:0] wr_data
 );
 
-    // -------------------------------------------------------------------------
-    // Debounce gen
-    // -------------------------------------------------------------------------
+      ////////////////////////
+     // Debounce gen press //
+    ////////////////////////
+    
     localparam int CLK_MHZ = 25;
-    /*
-    `ifdef SIM
-        localparam int STABLE_MS = 1;
-    `else
-        localparam int STABLE_MS = 20;
-    `endif
-    */
-    localparam int STABLE_MS = 1;
+    localparam int STABLE_MS = 20; //time button must be stable for
     localparam int STABLE_CNT = CLK_MHZ * 1000 * STABLE_MS;
-
-    localparam int DEB_W = $clog2(STABLE_CNT + 1);
+    localparam int DEB_WIDTH = $clog2(STABLE_CNT + 1);
 
     logic [1:0] gen_sync;
-    logic [DEB_W:0] deb_cnt;
+    logic [DEB_WIDTH:0] deb_cnt;
     logic gen_stable, gen_pulse;
 
     always_ff @(posedge clock, negedge reset_n) begin
@@ -49,7 +42,7 @@ module StimulusGen (
         else begin
             gen_pulse <= 1'b0;
             if (gen_sync[1] != gen_stable) begin
-                if (deb_cnt == DEB_W'(STABLE_CNT - 1)) begin
+                if (deb_cnt == DEB_WIDTH'(STABLE_CNT - 1)) begin
                     deb_cnt    <= '0;
                     gen_stable <= gen_sync[1];
                     if (gen_sync[1]) gen_pulse <= 1'b1;
@@ -62,9 +55,10 @@ module StimulusGen (
         end
     end
 
-    // -------------------------------------------------------------------------
-    // Free-running counter — used to randomise the LFSR seed on each gen press
-    // -------------------------------------------------------------------------
+      /////////////////////////////////////////////
+     // Free Counter to randomize the LFSR seed //
+    /////////////////////////////////////////////
+
     logic [15:0] free_cnt;
 
     always_ff @(posedge clock, negedge reset_n) begin
@@ -76,10 +70,13 @@ module StimulusGen (
         end
     end
 
-    // -------------------------------------------------------------------------
-    // Internal LFSR — shifts every clock, seeds from counter XOR fixed on gen
-    // -------------------------------------------------------------------------
-    localparam logic [15:0] FIXED_SEED = 16'hA59D;
+      ////////////////////////////////////////////
+     // LFSR to randomize tile positions/color //
+    ////////////////////////////////////////////
+
+    localparam logic [15:0] FIXED_SEED = 16'hD59B;
+
+    assign seed = FIXED_SEED ^ free_cnt;
 
     logic [15:0] lfsr_val;
     logic lfsr_in;
@@ -91,21 +88,23 @@ module StimulusGen (
             lfsr_val <= FIXED_SEED;
         end
         else if (gen_pulse) begin
-            lfsr_val <= FIXED_SEED ^ free_cnt;
+            lfsr_val <= seed;
         end
         else begin
             lfsr_val <= {lfsr_val[14:0], lfsr_in};
         end
     end
 
-    // -------------------------------------------------------------------------
-    // Sweep FSM
-    // -------------------------------------------------------------------------
+      ////////////////////
+     //  Places tiles  //
+    ////////////////////
+
     enum logic [1:0] {IDLE,SWEEP,DONE} cur_state, next_state;
 
-    logic [3:0] s_row, s_col;
+    logic [3:0] row, col;
     logic [1:0] cur_color;
 
+    // Next state logic
     always_comb begin
         case(cur_state)
             IDLE: begin
@@ -113,7 +112,7 @@ module StimulusGen (
                 else next_state = IDLE;
             end
             SWEEP: begin
-                if((s_col == 4'd15) && (s_row == 4'd15)) next_state = DONE;
+                if((col == 4'd15) && (row == 4'd15)) next_state = DONE;
                 else next_state = SWEEP;
             end
             DONE: begin
@@ -123,10 +122,11 @@ module StimulusGen (
         endcase
     end
 
+    // FSM Output / Datapath
     always_ff @(posedge clock, negedge reset_n) begin
         if (~reset_n) begin
-            s_row      <= 4'd0;
-            s_col      <= 4'd0;
+            row      <= 4'd0;
+            col      <= 4'd0;
             cur_color  <= 2'd1;
             wants_ctrl <= 1'b0;
             wr_en      <= 1'b0;
@@ -139,8 +139,8 @@ module StimulusGen (
                 IDLE: begin
                     wants_ctrl <= 1'b0;
                     if (gen_pulse) begin
-                        s_row      <= 4'd0;
-                        s_col      <= 4'd0;
+                        row      <= 4'd0;
+                        col      <= 4'd0;
                         cur_color  <= 2'd1; 
                         wants_ctrl <= 1'b1;
                     end
@@ -153,17 +153,17 @@ module StimulusGen (
                     // 1/16 place
                     if (lfsr_val[3:0] == 4'hF) begin
                         wr_en   <= 1'b1;
-                        wr_row  <= s_row;
-                        wr_col  <= s_col;
+                        wr_row  <= row;
+                        wr_col  <= col;
                         wr_data <= cur_color;
                     end
                     // Advance position
-                    if (s_col == 4'd15) begin
-                        s_col <= 4'd0;
-                        if (s_row != 4'd15)
-                            s_row <= s_row + 1'b1;
+                    if (col == 4'd15) begin
+                        col <= 4'd0;
+                        if (row != 4'd15)
+                            row <= row + 1'b1;
                     end else begin
-                        s_col <= s_col + 1'b1;
+                        col <= col + 1'b1;
                     end
                 end
                 DONE: begin
@@ -174,6 +174,7 @@ module StimulusGen (
         end
     end
 
+    //State register
     always_ff @(posedge clock, negedge reset_n) begin
         if(~reset_n) begin
             cur_state <= IDLE;
